@@ -31,7 +31,7 @@ import nvtx
 from litgpt import Tokenizer
 from litgpt.args import EvalArgs, TrainArgs
 from litgpt.config import name_to_config
-from litgpt.data import DataModule, TinyLlama
+from litgpt.data import DataModule, RedRockOpenWebText
 from litgpt.model import GPT, Block, CausalSelfAttention, Config, LLaMAMLP
 from litgpt.utils import (
     CLI,
@@ -50,20 +50,25 @@ from litgpt.utils import (
 )
 
 mp.set_start_method("spawn", force=True)
-import utilities.monitor_collectives
+try:
+    import utilities.monitor_collectives
 
-utilities.monitor_collectives.shunt_torch_communication()
+    utilities.monitor_collectives.shunt_torch_communication()
+except ModuleNotFoundError as e:
+    print(e)
+    print("Catching exception without raising, import is resolved in RedRock LitGPT image.")
+
 
 def setup(
-    model_name: Optional[str] = None,
+     model_name: Optional[str] = None,
     model_config: Optional[Config] = None,
     out_dir: Path = Path("out/pretrain"),
     precision: Literal["bf16-true", "bf16-mixed", "32-true", None] = None,
     initial_checkpoint_dir: Optional[Path] = None,
     resume: Union[bool, Path] = False,
-    data: Optional[DataModule] = None,
+    data_dir: Path = Path("data"),
     train: TrainArgs = TrainArgs(
-        save_interval = int(os.environ.get("SAVE_INTERVAL", 10000))
+        save_interval=int(os.environ.get("SAVE_INTERVAL", 10000)),
         log_interval=1,
         global_batch_size=512,
         micro_batch_size=4,
@@ -100,7 +105,7 @@ def setup(
             Useful for continued pretraining. Mutually exclusive with ``resume``.
         resume: Path to a checkpoint directory to resume from in case training was interrupted, or ``True`` to resume
             from the latest checkpoint in ``out_dir``.
-        data: Data-related arguments. If not provided, the default is ``litgpt.data.TinyLlama``.
+        data_dir: Directory in which train and val data files are located.
         train: Training-related arguments. See ``litgpt.args.TrainArgs`` for details.
         eval: Evaluation-related arguments. See ``litgpt.args.EvalArgs`` for details.
         devices: How many devices/GPUs to use. Uses all GPUs by default.
@@ -112,7 +117,7 @@ def setup(
         sharding_size: The number of devices to shard per FSDP group. Only relevant when using FSDP.
     """
     hparams = capture_hparams()
-    data = TinyLlama() if data is None else data
+    data = RedRockOpenWebText(data_path=data_dir, num_workers=2, batch_size=micro_batch_size)
     if model_config is not None and model_name is not None:
         raise ValueError("Only one of `model_name` or `model_config` can be set.")
     elif model_config is None and model_name is None:
@@ -124,7 +129,7 @@ def setup(
     out_dir = init_out_dir(out_dir)
     # in case the dataset requires the Tokenizer
     tokenizer = Tokenizer(tokenizer_dir) if tokenizer_dir is not None else None
-
+    
     logger = choose_logger(
         logger_name, out_dir, name=f"pretrain-{config.name}", resume=resume, log_interval=train.log_interval
     )
@@ -143,6 +148,14 @@ def setup(
     if logger_name in ("tensorboard", "wandb"):
         fabric.logger.log_hyperparams(hparams)
 
+    # Configure profiler
+    use_pt_profiler=False,
+    pt_profiler_wait=1,
+    pt_profiler_warmup=2,
+    pt_profiler_active=2,
+    pt_profiler_repeat=5,
+    nsys_profile_step_multiple=5,
+
     main(
         fabric,
         devices,
@@ -154,6 +167,12 @@ def setup(
         out_dir,
         tokenizer_dir,
         tokenizer,
+        use_pt_profiler,
+        pt_profiler_wait,
+        pt_profiler_warmup,
+        pt_profiler_active,
+        pt_profiler_repeat,
+        nsys_profile_step_multiple,
         train,
         eval,
     )
@@ -175,6 +194,7 @@ def main(
     pt_profiler_warmup: int,
     pt_profiler_active: int,
     pt_profiler_repeat: int,
+    nsys_profile_step_multiple: int,
     train: TrainArgs,
     eval: EvalArgs,
 ) -> None:
@@ -286,12 +306,10 @@ def fit(
     train: TrainArgs,
     eval: EvalArgs,
     prof: tprofiler.profile,
+    nsys_profile_step_multiple: int = 5,
 ) -> None:
     model = state["model"]
     optimizer = state["optimizer"]
-
-    # TODO(crankshaw)
-    nsys_profile_step_multiple = 5
 
     if eval.initial_validation:
         val_loss = validate(fabric, model, val_dataloader, max_iters=eval.max_iters)
@@ -525,3 +543,12 @@ def validate_args(train: TrainArgs, eval: EvalArgs, initial_checkpoint_dir, resu
     if issues:
         raise ValueError("\n".join(issues))
 
+
+if __name__ == "__main__":
+    # Uncomment this line if you see an error: "Expected is_sm80 to be true, but got false"
+    # torch.backends.cuda.enable_flash_sdp(False)
+    torch.set_float32_matmul_precision("high")
+
+    from jsonargparse import CLI
+
+    CLI(setup)
