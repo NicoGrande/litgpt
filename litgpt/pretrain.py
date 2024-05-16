@@ -118,7 +118,7 @@ def setup(
         sharding_size: The number of devices to shard per FSDP group. Only relevant when using FSDP.
     """
     hparams = capture_hparams()
-    data = RedRockOpenWebText(data_path=data_dir, num_workers=2, batch_size=micro_batch_size)
+    data = RedRockOpenWebText(data_path=data_dir, num_workers=2, batch_size=train.micro_batch_size)
     if model_config is not None and model_name is not None:
         raise ValueError("Only one of `model_name` or `model_config` can be set.")
     elif model_config is None and model_name is None:
