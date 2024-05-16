@@ -60,7 +60,7 @@ except ModuleNotFoundError as e:
 
 
 def setup(
-     model_name: Optional[str] = None,
+    model_name: Optional[str] = None,
     model_config: Optional[Config] = None,
     out_dir: Path = Path("out/pretrain"),
     precision: Literal["bf16-true", "bf16-mixed", "32-true", None] = None,
