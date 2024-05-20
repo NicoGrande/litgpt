@@ -1,6 +1,7 @@
 # Copyright Lightning AI. Licensed under the Apache License 2.0, see LICENSE file.
 import os
 import numpy as np
+import torch
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
