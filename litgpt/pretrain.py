@@ -332,7 +332,7 @@ def fit(
 
     max_tokens_per_device = train.max_tokens // fabric.world_size
     tokens_per_iter = train.micro_batch_size * model.max_seq_length
-    max_iters = max_tokens_per_device // tokens_per_iter
+    max_iters = train.max_steps
     log_iter_interval = train.log_interval * train.gradient_accumulation_iters(devices)
     initial_iter = state["iter_num"]
     train_iterator = CycleIterator(train_dataloader)
@@ -529,7 +529,7 @@ def save_checkpoint(fabric, state, tokenizer_dir, checkpoint_file):
 
 def validate_args(train: TrainArgs, eval: EvalArgs, initial_checkpoint_dir, resume) -> None:
     issues = []
-    unsupported = [(train, ["max_steps", "epochs"]), (eval, ["max_new_tokens"])]
+    unsupported = [(train, ["epochs"]), (eval, ["max_new_tokens"])]
     for args, names in unsupported:
         for name in names:
             if getattr(args, name) is not None:
