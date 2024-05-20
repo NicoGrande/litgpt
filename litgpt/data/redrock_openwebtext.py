@@ -56,7 +56,7 @@ class RedRockOpenWebText(DataModule):
         self.seq_length = max_seq_length + 1  # Increase by one because we need the next token as well
 
     def prepare_data(self) -> None:
-        if Path(self.data_path_train).is_dir() and Path(self.data_path_val).is_dir():
+        if Path(self.data_file_train).is_file() and Path(self.data_file_val).is_file():
             print(f"Found OpenWebText train and val dir: {self.data_path}. Skipping preprocessing.")
             return
 
