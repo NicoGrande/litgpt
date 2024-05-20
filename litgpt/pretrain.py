@@ -74,6 +74,7 @@ def setup(
         micro_batch_size=4,
         max_tokens=int(3e12),  # 3 trillion
         max_steps=None,
+        max_seq_length=2048,
         learning_rate=4e-4,
         weight_decay=1e-1,
         beta1=0.9,
