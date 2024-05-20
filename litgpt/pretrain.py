@@ -150,12 +150,12 @@ def setup(
         fabric.logger.log_hyperparams(hparams)
 
     # Configure profiler
-    use_pt_profiler=False,
-    pt_profiler_wait=1,
-    pt_profiler_warmup=2,
-    pt_profiler_active=2,
-    pt_profiler_repeat=5,
-    nsys_profile_step_multiple=5,
+    use_pt_profiler=False
+    pt_profiler_wait=1
+    pt_profiler_warmup=2
+    pt_profiler_active=2
+    pt_profiler_repeat=5
+    nsys_profile_step_multiple=5
 
     main(
         fabric,
