@@ -62,7 +62,7 @@ class RedRockOpenWebText(DataModule):
 
     def train_dataloader(self) -> DataLoader:
         train_dataset = Dataset(
-            input_dir=self.data_file_train,
+            data_file=self.data_file_train,
             block_size=self.seq_length
         )
         train_dataloader = DataLoader(
@@ -72,7 +72,7 @@ class RedRockOpenWebText(DataModule):
 
     def val_dataloader(self) -> DataLoader:
         val_dataset = Dataset(
-            input_dir=self.data_file_val,
+            data_file=self.data_file_val,
             block_size=self.seq_length
         )
         val_dataloader = DataLoader(
