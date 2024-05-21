@@ -362,9 +362,8 @@ def fit(
               fabric.print(f"Starting Nsys profiling")
               torch.cuda.cudart().cudaProfilerStart()
             iter_t0 = time.perf_counter()
-
-            input_ids = train_data[:, 0 : model.max_seq_length].contiguous().long()
-            targets = train_data[:, 1 : (model.max_seq_length + 1)].contiguous().long()
+            
+            input_ids, targets = train_data
 
             with fabric.no_backward_sync(model, enabled=is_accumulating):
                 with nvtx.annotate(color="blue", message="forward_step"):
@@ -455,8 +454,7 @@ def validate(fabric: L.Fabric, model: nn.Module, val_dataloader: DataLoader, max
     for k, batch in enumerate(val_dataloader):
         if k >= max_iters:
             break
-        input_ids = batch[:, 0 : model.max_seq_length].contiguous().long()
-        targets = batch[:, 1 : (model.max_seq_length + 1)].contiguous().long()
+        input_ids, targets = batch
         logits = model(input_ids)
         loss = chunked_cross_entropy(logits, targets)
         losses.append(loss)
