@@ -423,7 +423,7 @@ def fit(
                     f" remaining time: {timedelta(seconds=int(metrics['remaining_time']))!s}"
                 )
 
-                self.print(f"HEARTBEAT: Step {state['step_count']}")
+                fabric.print(f"HEARTBEAT: Step {state['step_count']}")
 
                 throughput_metrics = throughput.compute()
                 metrics.update(throughput_metrics)
