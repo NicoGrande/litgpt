@@ -55,7 +55,7 @@ class RedRockOpenWebText(DataModule):
     ) -> None:
         self.tokenizer = tokenizer
         self.batch_size = batch_size
-        self.seq_length = max_seq_length + 1  # Increase by one because we need the next token as well
+        self.seq_length = max_seq_length
 
     def prepare_data(self) -> None:
         if Path(self.data_file_train).is_file() and Path(self.data_file_val).is_file():
