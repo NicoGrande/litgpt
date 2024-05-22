@@ -359,7 +359,7 @@ def fit(
 
             state["iter_num"] += 1
             is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0
-            if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0 and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
+            if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0 and not is_accumulating:
               fabric.print(f"Starting Nsys profiling.")
               torch.cuda.cudart().cudaProfilerStart()
             iter_t0 = time.perf_counter()
@@ -514,11 +514,11 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
                 if isinstance(module, (LLaMAMLP, CausalSelfAttention)):
                     in_features = module.proj.in_features
                     out_features = module.proj.out_features
-                    bias = True if module.proj.bias is not None else false
+                    bias = True if module.proj.bias is not None else False
                 else:
                     in_features = module.in_features
                     out_features = module.out_features
-                    bias = True if module.bias is not None else false
+                    bias = True if module.bias is not None else False
 
                 with torch.device("cuda"):
                     new_linear = torch.nn.Linear(
