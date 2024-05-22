@@ -381,7 +381,7 @@ def fit(
                     optimizer.step()
                 optimizer.zero_grad()
 
-                if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0 and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
+                if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0:
                     fabric.print(f"Stopping Nsys profiling.")
                     torch.cuda.cudart().cudaProfilerStop()
 
@@ -510,18 +510,28 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
 
             if isinstance(module, (nn.Linear, LLaMAMLP, CausalSelfAttention)):
                 # define new layer on cuda so weight initialization is much faster
-                with torch.device('cuda'):
+                in_features, out_features, bias = None, None, None
+                if isinstance(module, (LLaMAMLP, CausalSelfAttention)):
+                    in_features = module.proj.in_features
+                    out_features = module.proj.out_features
+                    bias = True if module.proj.bias is not None else false
+                else:
+                    in_features = module.in_features
+                    out_features = module.out_features
+                    bias = True if module.bias is not None else false
+
+                with torch.device("cuda"):
                     new_linear = torch.nn.Linear(
-                        module.in_features,
-                        module.out_features,
-                        bias=True if module.bias is not None else False
+                        in_features,
+                        out_features,
+                        bias=bias
                     )
 
                 # initialize weights
                 new_linear.apply(model._init_weights)
 
                 # move new layer to cpu & prepare to load into model
-                new_linear.to('cpu')
+                new_linear.to("cpu")
                 
                 if isinstance(module, (LLaMAMLP, CausalSelfAttention)):
                     state_dict[f"{name}.proj.weight"] = new_linear.weight
@@ -534,7 +544,7 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
 
             elif isinstance(module, nn.Embedding):
                 # define new layer on cuda so weight initialization is much faster
-                with torch.device('cuda'):
+                with torch.device("cuda"):
                     new_embedding = torch.nn.Embedding(
                         module.weight.size()[0],
                         module.weight.size()[1]
@@ -544,7 +554,7 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
                 new_embedding.apply(model._init_weights)
 
                 # move new layer to cpu & prepare to load into model
-                new_embedding.to('cpu')
+                new_embedding.to("cpu")
                 state_dict[f"{name}.weight"] = new_embedding.weight
  
             # load new layer's weights & biases into model
