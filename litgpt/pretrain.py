@@ -358,30 +358,32 @@ def fit(
                 param_group["lr"] = lr
 
             state["iter_num"] += 1
-            is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0 
-            if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0 and not is_accumulating:
+            is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0
+            capture_profile = state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0
+
+            if capture_profile and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
               fabric.print(f"Starting Nsys profiling.")
               torch.cuda.cudart().cudaProfilerStart()
-            iter_t0 = time.perf_counter()
             
+            iter_t0 = time.perf_counter()
             input_ids, targets = train_data
 
             with fabric.no_backward_sync(model, enabled=is_accumulating):
-                with nvtx.annotate(color="blue", message="forward_step"):
+                with nvtx.annotate(color="blue", message=f"forward_step_{state['iter_num']=}_{state['step_count']=}"):
                     logits = model(input_ids)
                     loss = chunked_cross_entropy(logits, targets)
-                with nvtx.annotate(color="red", message="backward_step"):
+                with nvtx.annotate(color="red", message=f"backward_step_{state['iter_num']=}_{state['step_count']=}"):
                     fabric.backward(loss / train.gradient_accumulation_iters(devices))
 
             running_loss.update(loss.detach())
 
             if not is_accumulating:
                 fabric.clip_gradients(model, optimizer, max_norm=train.max_norm)
-                with nvtx.annotate(color="yellow", message="optimizer_step"):
+                with nvtx.annotate(color="yellow", message=f"optimizer_step_{state['iter_num']=}_{state['step_count']=}"):
                     optimizer.step()
                 optimizer.zero_grad()
 
-                if state["step_count"] > 1 and state["step_count"] % nsys_profile_step_multiple == 0:
+                if capture_profile:
                     fabric.print(f"Stopping Nsys profiling.")
                     torch.cuda.cudart().cudaProfilerStop()
 
@@ -515,12 +517,12 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
                     in_features = module.proj.in_features
                     out_features = module.proj.out_features
                     bias = True if module.proj.bias is not None else False
-                    dtype = module.proj.dtype
+                    dtype = module.proj.weight.dtype
                 else:
                     in_features = module.in_features
                     out_features = module.out_features
                     bias = True if module.bias is not None else False
-                    dtype = module.dtype
+                    dtype = module.weight.dtype
 
                 with torch.device("cuda"):
                     new_linear = torch.nn.Linear(
