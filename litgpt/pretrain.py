@@ -535,7 +535,7 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
                 
                 if isinstance(module, (LLaMAMLP, CausalSelfAttention)):
                     state_dict[f"{name}.proj.weight"] = new_linear.weight
-                    if module.bias is not None:
+                    if module.proj.bias is not None:
                         state_dict[f"{name}.proj.bias"] = new_linear.bias
                 else:
                     state_dict[f"{name}.weight"] = new_linear.weight
