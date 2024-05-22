@@ -67,6 +67,7 @@ def setup(
     initial_checkpoint_dir: Optional[Path] = None,
     resume: Union[bool, Path] = False,
     data_dir: Path = Path("data"),
+    num_nodes: int = 1,
     train: TrainArgs = TrainArgs(
         save_interval=int(os.environ.get("SAVE_INTERVAL", 10000)),
         log_interval=1,
@@ -108,6 +109,7 @@ def setup(
         resume: Path to a checkpoint directory to resume from in case training was interrupted, or ``True`` to resume
             from the latest checkpoint in ``out_dir``.
         data_dir: Directory in which train and val data files are located.
+        num_nodes: The number of nodes to train on.
         train: Training-related arguments. See ``litgpt.args.TrainArgs`` for details.
         eval: Evaluation-related arguments. See ``litgpt.args.EvalArgs`` for details.
         devices: How many devices/GPUs to use. Uses all GPUs by default.
@@ -143,7 +145,7 @@ def setup(
         strategy = FSDPStrategy(auto_wrap_policy={Block}, state_dict_type="full", sharding_strategy="HYBRID_SHARD", device_mesh=device_mesh)
     else:
         strategy = "auto"
-    fabric = L.Fabric(devices=devices, strategy=strategy, precision=precision, loggers=[logger])
+    fabric = L.Fabric(devices=devices, num_nodes=num_nodes, strategy=strategy, precision=precision, loggers=[logger])
     fabric.launch()
 
     fabric.print(pprint.pformat(hparams))
@@ -288,9 +290,6 @@ def main(
 
         if prof:
             prof.stop()
-
-        # Save final checkpoint
-        save_checkpoint(fabric, state, tokenizer_dir, out_dir / "final" / "lit_model.pth")
 
         fabric.print(f"Training time: {(time.perf_counter()-train_time):.2f}s")
         if fabric.device.type == "cuda":
