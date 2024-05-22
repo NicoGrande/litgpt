@@ -53,7 +53,7 @@ mp.set_start_method("spawn", force=True)
 try:
     import utilities.monitor_collectives
 
-    utilities.monitor_collectives.shunt_torch_communication()
+    # utilities.monitor_collectives.shunt_torch_communication()
 except ModuleNotFoundError as e:
     print(e)
     print("Catching exception without raising, import is resolved in RedRock LitGPT image.")
@@ -243,7 +243,7 @@ def main(
             model = GPT(config)
 
         # TODO(crankshaw): Add fast_init support
-        initialize_weights(fabric, model, n_layer=config.n_layer, n_embd=config.n_embd)
+        initialize_weights(fabric, model, n_layer=config.n_layer, n_embd=config.n_embd, train.fast_init)
 
         if train.tie_embeddings:
             model.transformer.wte.weight = model.lm_head.weight
@@ -491,26 +491,33 @@ def get_lr(learning_rate: float, it: int, warmup_iters: int, max_iters: int, min
     return min_lr + coeff * (learning_rate - min_lr)
 
 
-def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int) -> None:
+def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, fast_init: bool) -> None:
     """GPT-NeoX weight initialization (https://arxiv.org/abs/2204.06745)."""
     # Adapted from https://github.com/jzhang38/TinyLlama
+
+    context = torch.device("cuda") if fast_init else torch.device("cpu")
 
     def init_weights(module, std):
         nn.init.normal_(module.weight, mean=0.0, std=std)
         if getattr(module, "bias", None) is not None:
             nn.init.zeros_(module.bias)
+    
+    with context:
+        fabric.print(f"Initializing weights with {fast_init=}.", flush=True)
+        t = time.time()
+        for mod in model.modules():
+            if isinstance(mod, (nn.Embedding, nn.Linear)):
+                mod.reset_parameters = partial(init_weights, mod, std=math.sqrt(2.0 / 5 / n_embd))
 
-    for mod in model.modules():
-        if isinstance(mod, (nn.Embedding, nn.Linear)):
-            mod.reset_parameters = partial(init_weights, mod, std=math.sqrt(2.0 / 5 / n_embd))
+        # need a separate loop because `mod.proj` below is a `nn.Linear` too
+        for mod in model.modules():
+            if isinstance(mod, (LLaMAMLP, CausalSelfAttention)):
+                mod.proj.reset_parameters = partial(init_weights, mod.proj, std=(1 / math.sqrt(n_embd) / n_layer))
 
-    # need a separate loop because `mod.proj` below is a `nn.Linear` too
-    for mod in model.modules():
-        if isinstance(mod, (LLaMAMLP, CausalSelfAttention)):
-            mod.proj.reset_parameters = partial(init_weights, mod.proj, std=(1 / math.sqrt(n_embd) / n_layer))
+        if not isinstance(fabric.strategy, FSDPStrategy):
+            reset_parameters(model)
 
-    if not isinstance(fabric.strategy, FSDPStrategy):
-        reset_parameters(model)
+        fabric.print(f"{fabric.global_rank} time to init weights: {(time.time()-t):.02f}s", flush=True)
 
 
 def save_checkpoint(fabric, state, tokenizer_dir, checkpoint_file):
