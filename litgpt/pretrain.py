@@ -242,8 +242,7 @@ def main(
         with fabric.init_module(empty_init=True):
             model = GPT(config)
 
-        # TODO(crankshaw): Add fast_init support
-        initialize_weights(fabric, model, n_layer=config.n_layer, n_embd=config.n_embd, train.fast_init)
+        initialize_weights(fabric, model, n_layer=config.n_layer, n_embd=config.n_embd, fast_init=train.fast_init)
 
         if train.tie_embeddings:
             model.transformer.wte.weight = model.lm_head.weight
