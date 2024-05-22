@@ -358,7 +358,7 @@ def fit(
                 param_group["lr"] = lr
 
             state["iter_num"] += 1
-            is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0
+            is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0 
             if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0 and not is_accumulating:
               fabric.print(f"Starting Nsys profiling.")
               torch.cuda.cudart().cudaProfilerStart()
@@ -381,7 +381,7 @@ def fit(
                     optimizer.step()
                 optimizer.zero_grad()
 
-                if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0:
+                if state["step_count"] > 1 and state["step_count"] % nsys_profile_step_multiple == 0:
                     fabric.print(f"Stopping Nsys profiling.")
                     torch.cuda.cudart().cudaProfilerStop()
 
@@ -510,21 +510,24 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
 
             if isinstance(module, (nn.Linear, LLaMAMLP, CausalSelfAttention)):
                 # define new layer on cuda so weight initialization is much faster
-                in_features, out_features, bias = None, None, None
+                in_features, out_features, bias, dtype = None, None, None, None
                 if isinstance(module, (LLaMAMLP, CausalSelfAttention)):
                     in_features = module.proj.in_features
                     out_features = module.proj.out_features
                     bias = True if module.proj.bias is not None else False
+                    dtype = module.proj.dtype
                 else:
                     in_features = module.in_features
                     out_features = module.out_features
                     bias = True if module.bias is not None else False
+                    dtype = module.dtype
 
                 with torch.device("cuda"):
                     new_linear = torch.nn.Linear(
                         in_features,
                         out_features,
-                        bias=bias
+                        bias=bias,
+                        dtype=dtype
                     )
 
                 # initialize weights
@@ -547,7 +550,8 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
                 with torch.device("cuda"):
                     new_embedding = torch.nn.Embedding(
                         module.weight.size()[0],
-                        module.weight.size()[1]
+                        module.weight.size()[1],
+                        dtype=module.weight.dtype
                     )
 
                 # initialize weights
