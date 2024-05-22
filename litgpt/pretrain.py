@@ -331,7 +331,7 @@ def fit(
 
     max_tokens_per_device = train.max_tokens // fabric.world_size
     tokens_per_iter = train.micro_batch_size * model.max_seq_length
-    max_iters = train.max_steps
+    max_iters = max_tokens_per_device // tokens_per_iter
     log_iter_interval = train.log_interval * train.gradient_accumulation_iters(devices)
     initial_iter = state["iter_num"]
     train_iterator = CycleIterator(train_dataloader)
@@ -349,6 +349,9 @@ def fit(
             if state["iter_num"] >= max_iters:
                 break
 
+            if state["step_count"] >= train.max_steps:
+                break
+
             # determine and set the learning rate for this iteration
             lr = get_lr(train.learning_rate, state["iter_num"], warmup_iters, max_iters, train.min_lr)
             for param_group in optimizer.param_groups:
@@ -357,7 +360,7 @@ def fit(
             state["iter_num"] += 1
             is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0
             if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0 and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
-              fabric.print(f"Starting Nsys profiling")
+              fabric.print(f"Starting Nsys profiling.")
               torch.cuda.cudart().cudaProfilerStart()
             iter_t0 = time.perf_counter()
             
@@ -379,7 +382,7 @@ def fit(
                 optimizer.zero_grad()
 
                 if state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0 and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
-                    fabric.print(f"Starting Nsys profiling")
+                    fabric.print(f"Stopping Nsys profiling.")
                     torch.cuda.cudart().cudaProfilerStop()
 
                 state["step_count"] += 1
@@ -494,15 +497,59 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
     """GPT-NeoX weight initialization (https://arxiv.org/abs/2204.06745)."""
     # Adapted from https://github.com/jzhang38/TinyLlama
 
-    context = torch.device("cuda") if fast_init else torch.device("cpu")
-
     def init_weights(module, std):
         nn.init.normal_(module.weight, mean=0.0, std=std)
         if getattr(module, "bias", None) is not None:
             nn.init.zeros_(module.bias)
     
-    with context:
-        fabric.print(f"Initializing weights with {fast_init=}.", flush=True)
+    fabric.print(f"Initializing weights with {fast_init=}.", flush=True)
+    if fast_init:
+        t = time.time()
+        for name, module in model.named_modules():
+            state_dict = {}
+
+            if isinstance(module, (nn.Linear, LLaMAMLP, CausalSelfAttention)):
+                # define new layer on cuda so weight initialization is much faster
+                with torch.device('cuda'):
+                    new_linear = torch.nn.Linear(
+                        module.in_features,
+                        module.out_features,
+                        bias=True if module.bias is not None else False
+                    )
+
+                # initialize weights
+                new_linear.apply(model._init_weights)
+
+                # move new layer to cpu & prepare to load into model
+                new_linear.to('cpu')
+                
+                if isinstance(module, (LLaMAMLP, CausalSelfAttention)):
+                    state_dict[f"{name}.proj.weight"] = new_linear.weight
+                    if module.bias is not None:
+                        state_dict[f"{name}.proj.bias"] = new_linear.bias
+                else:
+                    state_dict[f"{name}.weight"] = new_linear.weight
+                    if module.bias is not None:
+                        state_dict[f"{name}.bias"] = new_linear.bias
+
+            elif isinstance(module, nn.Embedding):
+                # define new layer on cuda so weight initialization is much faster
+                with torch.device('cuda'):
+                    new_embedding = torch.nn.Embedding(
+                        module.weight.size()[0],
+                        module.weight.size()[1]
+                    )
+
+                # initialize weights
+                new_embedding.apply(model._init_weights)
+
+                # move new layer to cpu & prepare to load into model
+                new_embedding.to('cpu')
+                state_dict[f"{name}.weight"] = new_embedding.weight
+ 
+            # load new layer's weights & biases into model
+            model.load_state_dict(state_dict, strict=False, assign=True)
+    else:
         t = time.time()
         for mod in model.modules():
             if isinstance(mod, (nn.Embedding, nn.Linear)):
@@ -516,7 +563,7 @@ def initialize_weights(fabric: L.Fabric, model: GPT, n_layer: int, n_embd: int, 
         if not isinstance(fabric.strategy, FSDPStrategy):
             reset_parameters(model)
 
-        fabric.print(f"{fabric.global_rank} time to init weights: {(time.time()-t):.02f}s", flush=True)
+    fabric.print(f"{fabric.global_rank} time to init weights: {(time.time()-t):.02f}s", flush=True)
 
 
 def save_checkpoint(fabric, state, tokenizer_dir, checkpoint_file):
