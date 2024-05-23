@@ -389,46 +389,47 @@ def fit(
                 if prof:
                     prof.step()
 
-        with nvtx.annotate(color="purple", message="device_to_host_logging_sync"):
-            if state["iter_num"] % log_iter_interval == 0:
+        if state["iter_num"] % log_iter_interval == 0:
+            with nvtx.annotate(color="purple", message="device_to_host_logging_sync"):
                 loss = running_loss.compute().item()  # expensive device-to-host synchronization
-                t1 = time.perf_counter()
-                throughput.update(
-                    time=(t1 - total_t0),
-                    flops=(measured_flops * log_iter_interval),
-                    batches=state["iter_num"],
-                    samples=(state["iter_num"] * train.micro_batch_size),
-                    lengths=(state["iter_num"] * train.micro_batch_size * model.max_seq_length),
-                )
-                metrics = {
-                    "loss": loss,
-                    "iter": state["iter_num"],
-                    "step": state["step_count"],
-                    "epoch": train_iterator.epoch,
-                    "iter_time": t1 - iter_t0,
-                    "remaining_time": (
-                        (t1 - total_t0) / (state["iter_num"] - initial_iter) * (max_iters - state["iter_num"])
-                    ),
-                    "tokens": state["iter_num"] * train.micro_batch_size * model.max_seq_length,
-                    "total_tokens": (state["iter_num"] * train.micro_batch_size * model.max_seq_length * fabric.world_size),
-                    "learning_rate": lr,
-                }
-                if isinstance(val_loss, float):
-                    val_loss = f"{val_loss:.3f}"
-                fabric.print(
-                    f"Epoch {metrics['epoch']+1} | iter {metrics['iter']} step {metrics['step']} |"
-                    f" loss train: {metrics['loss']:.3f},"
-                    f" val: {val_loss} |"
-                    f" iter time: {metrics['iter_time'] * 1000:.2f} ms"
-                    f"{' (step)' if not is_accumulating else ''}"
-                    f" remaining time: {timedelta(seconds=int(metrics['remaining_time']))!s}"
-                )
 
-                fabric.print(f"HEARTBEAT: Step {state['step_count']}")
+            t1 = time.perf_counter()
+            throughput.update(
+                time=(t1 - total_t0),
+                flops=(measured_flops * log_iter_interval),
+                batches=state["iter_num"],
+                samples=(state["iter_num"] * train.micro_batch_size),
+                lengths=(state["iter_num"] * train.micro_batch_size * model.max_seq_length),
+            )
+            metrics = {
+                "loss": loss,
+                "iter": state["iter_num"],
+                "step": state["step_count"],
+                "epoch": train_iterator.epoch,
+                "iter_time": t1 - iter_t0,
+                "remaining_time": (
+                    (t1 - total_t0) / (state["iter_num"] - initial_iter) * (max_iters - state["iter_num"])
+                ),
+                "tokens": state["iter_num"] * train.micro_batch_size * model.max_seq_length,
+                "total_tokens": (state["iter_num"] * train.micro_batch_size * model.max_seq_length * fabric.world_size),
+                "learning_rate": lr,
+            }
+            if isinstance(val_loss, float):
+                val_loss = f"{val_loss:.3f}"
+            fabric.print(
+                f"Epoch {metrics['epoch']+1} | iter {metrics['iter']} step {metrics['step']} |"
+                f" loss train: {metrics['loss']:.3f},"
+                f" val: {val_loss} |"
+                f" iter time: {metrics['iter_time'] * 1000:.2f} ms"
+                f"{' (step)' if not is_accumulating else ''}"
+                f" remaining time: {timedelta(seconds=int(metrics['remaining_time']))!s}"
+            )
 
-                throughput_metrics = throughput.compute()
-                metrics.update(throughput_metrics)
-                fabric.log_dict(metrics, step=state["iter_num"] - 1)
+            fabric.print(f"HEARTBEAT: Step {state['step_count']}")
+
+            throughput_metrics = throughput.compute()
+            metrics.update(throughput_metrics)
+            fabric.log_dict(metrics, step=state["iter_num"] - 1)
 
         if not is_accumulating and capture_profile:
             fabric.print(f"Stopping Nsys profiling.")
