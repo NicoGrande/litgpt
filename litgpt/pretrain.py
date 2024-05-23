@@ -382,13 +382,10 @@ def fit(
                 fabric.clip_gradients(model, optimizer, max_norm=train.max_norm)
                 with nvtx.annotate(color="yellow", message=f"optimizer_step_{state['iter_num']=}_{state['step_count']=}"):
                     optimizer.step()
+                
                 optimizer.zero_grad()
-
-                if capture_profile:
-                    fabric.print(f"Stopping Nsys profiling.")
-                    torch.cuda.profiler.stop()
-
                 state["step_count"] += 1
+
                 if prof:
                     prof.step()
 
@@ -432,6 +429,10 @@ def fit(
                 throughput_metrics = throughput.compute()
                 metrics.update(throughput_metrics)
                 fabric.log_dict(metrics, step=state["iter_num"] - 1)
+
+        if not is_accumulating and capture_profile:
+            fabric.print(f"Stopping Nsys profiling.")
+            torch.cuda.profiler.stop()
 
         if val_dataloader is not None and not is_accumulating and state["step_count"] % eval.interval == 0:
             t0 = time.perf_counter()
