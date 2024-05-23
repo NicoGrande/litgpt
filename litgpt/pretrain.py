@@ -53,7 +53,7 @@ mp.set_start_method("spawn", force=True)
 try:
     import utilities.monitor_collectives
 
-    # utilities.monitor_collectives.shunt_torch_communication()
+    utilities.monitor_collectives.shunt_torch_communication()
 except ModuleNotFoundError as e:
     print(e)
     print("Catching exception without raising, import is resolved in RedRock LitGPT image.")
