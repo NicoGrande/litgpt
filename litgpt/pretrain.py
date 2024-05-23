@@ -367,20 +367,20 @@ def fit(
         iter_t0 = time.perf_counter()
         input_ids, targets = train_data
 
-        with nvtx.annotate(color="green", message=f"training_step_{state['iter_num']=}_{state['step_count']=}"):
+        with nvtx.annotate(color="green", message=f"training_step"):
             with fabric.no_backward_sync(model, enabled=is_accumulating):
-                with nvtx.annotate(color="blue", message=f"forward_step_{state['iter_num']=}_{state['step_count']=}"):
+                with nvtx.annotate(color="blue", message=f"forward_step"):
                     logits = model(input_ids)
                     loss = chunked_cross_entropy(logits, targets)
                 
-                with nvtx.annotate(color="red", message=f"backward_step_{state['iter_num']=}_{state['step_count']=}"):
+                with nvtx.annotate(color="red", message=f"backward_step"):
                     fabric.backward(loss / train.gradient_accumulation_iters(devices))
 
             running_loss.update(loss.detach())
 
             if not is_accumulating:
                 fabric.clip_gradients(model, optimizer, max_norm=train.max_norm)
-                with nvtx.annotate(color="yellow", message=f"optimizer_step_{state['iter_num']=}_{state['step_count']=}"):
+                with nvtx.annotate(color="yellow", message=f"optimizer_step"):
                     optimizer.step()
                 
                 optimizer.zero_grad()
