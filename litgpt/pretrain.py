@@ -362,7 +362,7 @@ def fit(
 
         if capture_profile and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
             fabric.print(f"Starting Nsys profiling.")
-            torch.cuda.cudart().cudaProfilerStart()
+            torch.cuda.profiler.start()
             
         iter_t0 = time.perf_counter()
         input_ids, targets = train_data
@@ -386,7 +386,7 @@ def fit(
 
                 if capture_profile:
                     fabric.print(f"Stopping Nsys profiling.")
-                    torch.cuda.cudart().cudaProfilerStop()
+                    torch.cuda.profiler.stop()
 
                 state["step_count"] += 1
                 if prof:
