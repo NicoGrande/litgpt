@@ -285,7 +285,7 @@ def main(
             fabric.load(resume, state)
 
         train_time = time.perf_counter()
-        fit(fabric, devices, state, train_dataloader, val_dataloader, out_dir, tokenizer_dir, train, eval, prof)
+        fit(fabric, devices, state, train_dataloader, val_dataloader, out_dir, tokenizer_dir, train, eval, prof, nsys_profile_step_multiple)
 
         if prof:
             prof.stop()
