@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:experimental
 
-# FROM nvcr.io/nvidia/pytorch:23.09-py3
-FROM nvcr.io/nvidia/pytorch:24.04-py3
+FROM nvcr.io/nvidia/pytorch:24.02-py3
 
 RUN pip install -U torch>=2.3.0 torchvision torchaudio
 
