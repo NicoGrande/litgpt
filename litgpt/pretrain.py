@@ -345,33 +345,34 @@ def fit(
     warmup_iters = train.warmup_iters(devices, max_iters, train_dataloader)
 
     for train_data in train_iterator:
-        with nvtx.annotate(color="green", message="training_step"):
-            if state["iter_num"] >= max_iters:
-                break
+        if state["iter_num"] >= max_iters:
+            break
 
-            if state["step_count"] >= train.max_steps:
-                break
+        if state["step_count"] >= train.max_steps:
+            break
 
-            # determine and set the learning rate for this iteration
-            lr = get_lr(train.learning_rate, state["iter_num"], warmup_iters, max_iters, train.min_lr)
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = lr
+        # determine and set the learning rate for this iteration
+        lr = get_lr(train.learning_rate, state["iter_num"], warmup_iters, max_iters, train.min_lr)
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
 
-            state["iter_num"] += 1
-            is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0
-            capture_profile = state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0
+        state["iter_num"] += 1
+        is_accumulating = state["iter_num"] % train.gradient_accumulation_iters(devices) != 0
+        capture_profile = state["step_count"] > 0 and state["step_count"] % nsys_profile_step_multiple == 0
 
-            if capture_profile and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
-              fabric.print(f"Starting Nsys profiling.")
-              torch.cuda.cudart().cudaProfilerStart()
+        if capture_profile and state["iter_num"] % train.gradient_accumulation_iters(devices) == 1:
+            fabric.print(f"Starting Nsys profiling.")
+            torch.cuda.cudart().cudaProfilerStart()
             
-            iter_t0 = time.perf_counter()
-            input_ids, targets = train_data
+        iter_t0 = time.perf_counter()
+        input_ids, targets = train_data
 
+        with nvtx.annotate(color="green", message=f"training_step_{state['iter_num']=}_{state['step_count']=}"):
             with fabric.no_backward_sync(model, enabled=is_accumulating):
                 with nvtx.annotate(color="blue", message=f"forward_step_{state['iter_num']=}_{state['step_count']=}"):
                     logits = model(input_ids)
                     loss = chunked_cross_entropy(logits, targets)
+                
                 with nvtx.annotate(color="red", message=f"backward_step_{state['iter_num']=}_{state['step_count']=}"):
                     fabric.backward(loss / train.gradient_accumulation_iters(devices))
 
@@ -389,9 +390,9 @@ def fit(
 
                 state["step_count"] += 1
                 if prof:
-                  prof.step()
+                    prof.step()
 
-
+        with nvtx.annotate(color="purple", message="device_to_host_logging_sync"):
             if state["iter_num"] % log_iter_interval == 0:
                 loss = running_loss.compute().item()  # expensive device-to-host synchronization
                 t1 = time.perf_counter()
@@ -432,19 +433,19 @@ def fit(
                 metrics.update(throughput_metrics)
                 fabric.log_dict(metrics, step=state["iter_num"] - 1)
 
-            if val_dataloader is not None and not is_accumulating and state["step_count"] % eval.interval == 0:
-                t0 = time.perf_counter()
-                val_loss = validate(fabric, model, val_dataloader, max_iters=eval.max_iters)
-                val_loss = val_loss.item()
-                td = time.perf_counter() - t0
+        if val_dataloader is not None and not is_accumulating and state["step_count"] % eval.interval == 0:
+            t0 = time.perf_counter()
+            val_loss = validate(fabric, model, val_dataloader, max_iters=eval.max_iters)
+            val_loss = val_loss.item()
+            td = time.perf_counter() - t0
 
-                fabric.print(f"iter {state['iter_num']}: val loss {val_loss:.4f}, val time: {td * 1000:.2f} ms")
-                metrics = {"val_loss": val_loss, "val_ppl": math.exp(val_loss)}
-                fabric.log_dict(metrics, step=state["iter_num"] - 1)
-                fabric.barrier()
+            fabric.print(f"iter {state['iter_num']}: val loss {val_loss:.4f}, val time: {td * 1000:.2f} ms")
+            metrics = {"val_loss": val_loss, "val_ppl": math.exp(val_loss)}
+            fabric.log_dict(metrics, step=state["iter_num"] - 1)
+            fabric.barrier()
 
-            if train.save_interval is not None and not is_accumulating and state["step_count"] % train.save_interval == 0:
-                save_checkpoint(fabric, state, tokenizer_dir, out_dir / f"step-{state['step_count']:08d}" / "lit_model.pth")
+        if train.save_interval is not None and not is_accumulating and state["step_count"] % train.save_interval == 0:
+            save_checkpoint(fabric, state, tokenizer_dir, out_dir / f"step-{state['step_count']:08d}" / "lit_model.pth")
 
 
 @torch.no_grad()
