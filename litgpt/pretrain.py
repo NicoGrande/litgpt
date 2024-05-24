@@ -253,7 +253,7 @@ def main(
         fabric.print(f"Total parameters: {num_parameters(model):,}")
 
         model = torch.compile(model)
-        model = fabric.setup(model, _reapply_compile=False)
+        model = fabric.setup(model)
 
         optimizer = torch.optim.AdamW(
             model.parameters(),
