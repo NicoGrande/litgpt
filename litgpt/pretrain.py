@@ -22,11 +22,6 @@ from torch.utils.data import DataLoader
 from torchmetrics.aggregation import RunningMean
 from typing_extensions import Literal
 import nvtx
-# import logging
-
-# # support running without installing as a package
-# wd = Path(__file__).parent.parent.resolve()
-# sys.path.append(str(wd))
 
 from litgpt import Tokenizer
 from litgpt.args import EvalArgs, TrainArgs
@@ -56,7 +51,7 @@ try:
     utilities.monitor_collectives.shunt_torch_communication()
 except ModuleNotFoundError as e:
     print(e)
-    print("Catching exception without raising, import is resolved in RedRock LitGPT image.")
+    print("Monitor collectives library not found. Collectives will not be monitored..")
 
 
 def setup(
@@ -68,6 +63,7 @@ def setup(
     resume: Union[bool, Path] = False,
     data_dir: Path = Path("data"),
     num_nodes: int = 1,
+    use_pt_profiler: bool = False,
     train: TrainArgs = TrainArgs(
         save_interval=int(os.environ.get("SAVE_INTERVAL", 10000)),
         log_interval=1,
@@ -110,6 +106,7 @@ def setup(
             from the latest checkpoint in ``out_dir``.
         data_dir: Directory in which train and val data files are located.
         num_nodes: The number of nodes to train on.
+        use_pt_profiler: Whether to use torch.profiler or nvtx markers. 
         train: Training-related arguments. See ``litgpt.args.TrainArgs`` for details.
         eval: Evaluation-related arguments. See ``litgpt.args.EvalArgs`` for details.
         devices: How many devices/GPUs to use. Uses all GPUs by default.
@@ -133,7 +130,7 @@ def setup(
     out_dir = init_out_dir(out_dir)
     # in case the dataset requires the Tokenizer
     tokenizer = Tokenizer(tokenizer_dir) if tokenizer_dir is not None else None
-    
+ 
     logger = choose_logger(
         logger_name, out_dir, name=f"pretrain-{config.name}", resume=resume, log_interval=train.log_interval
     )
@@ -153,7 +150,6 @@ def setup(
         fabric.logger.log_hyperparams(hparams)
 
     # Configure profiler
-    use_pt_profiler=False
     pt_profiler_wait=1
     pt_profiler_warmup=2
     pt_profiler_active=2
@@ -229,9 +225,6 @@ def main(
                 record_shapes=True,
                 with_stack=True,
                 activities=[tprofiler.ProfilerActivity.CPU, tprofiler.ProfilerActivity.CUDA],
-                execution_trace_observer=(
-                    tprofiler.ExecutionTraceObserver().register_callback(f"{execution_trace_out_dir}/execution_trace_rank_{trainer.global_rank}.json")
-                ),
             )
             prof.start()
         else:
